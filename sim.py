@@ -2,11 +2,17 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+import argparse
+import sys
+import os
 
 # =========================================================
 # 1. ROBUST UNIT NORMALIZATION & MESH REPAIR
 # =========================================================
 def load_mesh_safe(stl_path):
+    if not os.path.exists(stl_path):
+        raise FileNotFoundError(f"STL file not found: {stl_path}")
+    
     mesh = trimesh.load(stl_path)
     
     # Global topological healing for messy STLs
@@ -25,6 +31,45 @@ def load_mesh_safe(stl_path):
         print(f"  [Unit Fix] STL max dimension ({max_dim*1000:.1f} mm) assumed already in meters")
         
     return mesh
+
+
+# =========================================================
+# COOLANT PROPERTIES
+# =========================================================
+def get_coolant_properties(coolant='water', avg_temp=35.0):
+    """Return fluid properties based on coolant type."""
+    coolant_lower = coolant.lower()
+    
+    if coolant_lower == 'water':
+        print(f"  [Coolant] Using Water properties at ~{avg_temp}°C")
+        return {
+            'rho': 994,      # kg/m³
+            'mu': 0.00072,   # Pa·s
+            'k': 0.62,       # W/m·K
+            'cp': 4178,      # J/kg·K
+            'pr': 4.85
+        }
+    elif coolant_lower == 'air':
+        print(f"  [Coolant] Using Air properties at ~{avg_temp}°C")
+        return {
+            'rho': 1.145,    # kg/m³
+            'mu': 1.88e-5,   # Pa·s
+            'k': 0.0265,     # W/m·K
+            'cp': 1007,      # J/kg·K
+            'pr': 0.71
+        }
+    elif coolant_lower in ['ln2', 'liquid_nitrogen', 'nitrogen']:
+        # Properties evaluated at normal boiling point (77.36 K / -195.8°C at 1 atm)
+        print(f"  [Coolant] Using Liquid Nitrogen (LN2) cryogenic properties (~ -196°C)")
+        return {
+            'rho': 807.3,    # kg/m³
+            'mu': 1.52e-4,   # Pa·s
+            'k': 0.134,      # W/m·K
+            'cp': 2040,      # J/kg·K
+            'pr': 2.31
+        }
+    else:
+        raise ValueError(f"Unsupported coolant: {coolant}. Use 'water', 'air', or 'ln2'.")
 
 
 # =========================================================
@@ -86,13 +131,9 @@ def estimate_flow_geometry(mesh):
             except:
                 continue
 
-    # =====================================================
-    # SMART VOID CORRECTION (The Core Logic Inverse Fix)
-    # =====================================================
+    # Smart Void Correction
     perp_axes = [i for i in range(3) if i != flow_axis_index]
     axis_u, axis_v = perp_axes[0], perp_axes[1]
-    
-    # Calculate the raw enveloping physical bounding box cross-section
     total_envelope_area = extent[axis_u] * extent[axis_v]
     
     if len(areas) < 3 or len(perimeters) < 3:
@@ -116,9 +157,8 @@ def estimate_flow_geometry(mesh):
                     solid_points += 1
                 total_points += 1
                 
-        # FIX: The fluid fraction is the total area MINUS the solid metal internal structures
         solid_fraction = solid_points / max(total_points, 1)
-        fluid_fraction = max(1.0 - solid_fraction, 0.25) # Hard minimum flow floor of 25% area
+        fluid_fraction = max(1.0 - solid_fraction, 0.25)
         
         A = total_envelope_area * fluid_fraction
         P = 2 * (extent[axis_u] + extent[axis_v]) * (1.0 + solid_fraction)
@@ -126,13 +166,11 @@ def estimate_flow_geometry(mesh):
         if len(perimeters) >= 3:
             P = np.median(np.array(perimeters))
     else:
-        # If slicing worked but sampled the solid boundaries, apply inverse optimization
         raw_sliced_area = np.median(np.array(areas))
         if raw_sliced_area > (0.75 * total_envelope_area):
-            # Area is non-physically large (captured outer shell/solid body), calculate actual internal void space
             A = total_envelope_area - raw_sliced_area
             if A <= 0: 
-                A = total_envelope_area * 0.35 # Fallback to standard microchannel structural ratio
+                A = total_envelope_area * 0.35
         else:
             A = raw_sliced_area
             
@@ -149,16 +187,24 @@ def simulate_cooler(
     stl_path,
     inlet_temp=20.0,
     power=150,
-    flow_rate_lpm=1.5
+    flow_rate_lpm=1.5,
+    coolant='water'
 ):
     mesh = load_mesh_safe(stl_path)
     
-    # Water properties at ~35°C
-    rho = 994     # kg/m³
-    mu = 0.00072  # Pa·s 
-    k = 0.62      # W/m·K
-    cp = 4178     # J/kg·K
-    pr = 4.85     
+    # Override default inlet temperatures if LN2 is specified but temperature left at room standard
+    if coolant.lower() in ['ln2', 'liquid_nitrogen', 'nitrogen'] and inlet_temp == 20.0:
+        inlet_temp = -195.8
+        print(f"  [Inlet Fix] Automatically shifting LN2 inlet to standard saturation temp: {inlet_temp}°C")
+
+    # Get coolant properties
+    props = get_coolant_properties(coolant, inlet_temp + 15)
+    
+    rho = props['rho']
+    mu = props['mu']
+    k = props['k']
+    cp = props['cp']
+    pr = props['pr']
     
     flow_rate = flow_rate_lpm / 60 / 1000  # m³/s
     
@@ -223,17 +269,22 @@ def simulate_cooler(
     t_interface = avg_fluid_temp + (power * r_conv)
     die_temp = t_interface + (power * r_solid)
     
+    # Warn user about phase-change limits if LN2 boils over dramatically
+    if coolant.lower() in ['ln2', 'liquid_nitrogen', 'nitrogen'] and outlet_temp > -195.8:
+        print("  [Physics Warning] Real-world LN2 would undergo violent phase change (boiling).")
+        print("                    Single-phase convective coefficients may underestimate cooling.")
+    
     # =====================================================
-    # OUTPUT (FIXED FORMATTING FOR HIGH-PRECISION VISCOSITY)
+    # OUTPUT
     # =====================================================
     print("\nSimulation Results:")
+    print(f"  Coolant: {coolant.upper()}")
     print(f"  Velocity: {velocity:.3f} m/s")
     print(f"  Reynolds Number: {re:.0f} ({regime})")
     print(f"  Nusselt Number: {nu:.2f}")
     print(f"  Convective Coeff (h): {h:.0f} W/m²K")
     print(f"  Wetted Surface Area: {A_wetted*1e4:.2f} cm²")
-    # CHANGED: Added high-precision float formatting to prevent fractional Pascal outputs rounding down to 0
-    print(f"  Pressure Drop: {dp:.4f} Pa ({dp/100000:.6f} bar)")
+    print(f"  Pressure Drop: {dp:.4f} Pa ({dp/100:.4f} mbar)")
     print(f"  Fluid Temperature Rise: {dT_fluid:.2f} °C")
     print(f"  Coolant Outlet Temp: {outlet_temp:.2f} °C")
     print(f"  Estimated Die Temp: {die_temp:.2f} °C")
@@ -247,17 +298,45 @@ def simulate_cooler(
         "dp": dp,
         "outlet_temp": outlet_temp,
         "delta_t": dT_fluid,
-        "regime": regime
+        "regime": regime,
+        "coolant": coolant
     }
 
+
 if __name__ == "__main__":
-    print("=== ADVANCED CPU COOLER GEOMETRY SIMULATOR ===\n")
+    parser = argparse.ArgumentParser(description="Advanced CPU Cooler Geometry Simulator")
+    parser.add_argument("stl_file", nargs="?", default="turtle.stl", 
+                        help="Path to the STL file (default: turtle.stl)")
+    parser.add_argument("--coolant", choices=["water", "air", "ln2"], default="water",
+                        help="Coolant type: water, air, or ln2 (default: water)")
+    parser.add_argument("--power", type=float, default=150.0,
+                        help="CPU power in Watts (default: 150)")
+    parser.add_argument("--flow", type=float, default=1.5,
+                        help="Flow rate in LPM (default: 1.5)")
+    parser.add_argument("--inlet", type=float, default=20.0,
+                        help="Inlet temperature in °C. (Defaults to -195.8°C if coolant is ln2 and parameter is left untouched)")
+    
+    args = parser.parse_args()
+    
+    # Fallback to make the CLI usage straightforward for LN2
+    if args.coolant.lower() == 'ln2' and args.inlet == 20.0:
+        args.inlet = -195.8
+        
+    print("=== ADVANCED CPU COOLER GEOMETRY SIMULATOR ===")
+    print(f"STL File: {args.stl_file}")
+    print(f"Coolant: {args.coolant.upper()}")
+    print(f"Power: {args.power}W | Flow: {args.flow} LPM | Inlet: {args.inlet}°C\n")
+    
     try:
         simulate_cooler(
-            "ants.stl",
-            power=150,
-            flow_rate_lpm=1.5,
-            inlet_temp=20.0
+            args.stl_file,
+            inlet_temp=args.inlet,
+            power=args.power,
+            flow_rate_lpm=args.flow,
+            coolant=args.coolant
         )
-    except FileNotFoundError:
-        print("Error: 'ants.stl' file not found. Please verify the file path.")
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("Tip: Provide a valid STL file path as argument or place it in the working directory.")
+    except Exception as e:
+        print(f"Simulation error: {e}")
