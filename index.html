@@ -234,6 +234,7 @@ height: 500px;
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 </head>
 <body>
@@ -455,6 +456,10 @@ side: THREE.DoubleSide
 
 // --- MAIN SYSTEM GENERATOR PIPELINE ---
 function executeProceduralPipeline() {
+const loadingEl = document.getElementById('loading');
+loadingEl.style.display = 'block';
+
+setTimeout(() => {
 if(activeVisualMesh) scene.remove(activeVisualMesh);
 if(activeFluidSecondaryMesh) scene.remove(activeFluidSecondaryMesh);
 if(particleSystem) scene.remove(particleSystem);
@@ -570,6 +575,8 @@ cachedHollowBlockGeo = DynamicMeshBooleanCompiler.difference(primaryChassisGeo, 
 
 updateBlockMaterials(flowMedium, renderMode);
 buildVectorParticleEngine(flowMedium, currentInterpolatedTemp);
+loadingEl.style.display = 'none';
+}, 50);
 }
 
 function updateBlockMaterials(flowMedium, renderMode) {
@@ -645,6 +652,8 @@ let segmentIdx = Math.floor(Math.random() * globalTunnelHistoryData.length);
 let segment = globalTunnelHistoryData[segmentIdx];
 let progress = Math.random();
 
+if(!segment) continue;
+
 let currentPos = new THREE.Vector3().lerpVectors(segment.ptA, segment.ptB, progress);
 coords[i*3] = currentPos.x;
 coords[i*3+1] = currentPos.y;
@@ -713,6 +722,9 @@ return baseColor;
 }
 
 function animateSimulationEngine() {
+requestAnimationFrame(animateSimulationEngine);
+controls.update();
+
 const medium = document.getElementById('param-medium').value;
 const dMin = parseFloat(document.getElementById('param-dmin').value);
 const dMax = parseFloat(document.getElementById('param-dmax').value);
@@ -754,7 +766,6 @@ if (reynoldsChoke > 4000) {
 // Empirical Nusselt Correlation Equations
 let nuChoke;
 if (reynoldsChoke >= 3000) {
-    // Gnielinski / Dittus-Boelter Turbulent Proxy
     const f = Math.pow(0.79 * Math.log(reynoldsChoke) - 1.64, -2); // Friction coefficient
     nuChoke = ((f / 8) * (reynoldsChoke - 1000) * prandtl) / (1 + 12.7 * Math.sqrt(f / 8) * (Math.pow(prandtl, 2/3) - 1));
 } else {
@@ -783,11 +794,11 @@ const fluidDeltaT = targetPowerLoad / (massFlowRate * cp_fluid);
 document.getElementById('hud-delta').innerText = fluidDeltaT.toFixed(1) + "°C";
 document.getElementById('hud-fluid-out').innerText = (20.0 + fluidDeltaT).toFixed(1) + "°C";
 
-// Total System Thermal Resistance Stack (\theta_total = \theta_copper + \theta_convective)
-const avgH = (hChoke * 0.4) + (hChamber * 0.6); // Surface area weighting distribution
+// Total System Thermal Resistance Stack
+const avgH = (hChoke * 0.4) + (hChamber * 0.6); 
 const totalSurfaceArea = (numChannels * 0.05 * Math.PI * ((dMin + dMax) / 2000)) * (1 + (parseInt(document.getElementById('param-cross').value)/100)*0.3);
 const rConvective = 1 / (avgH * totalSurfaceArea);
-const rConductive = 0.002 / (401 * 0.0025); // 2mm thick base plate over 25cm² area
+const rConductive = 0.002 / (401 * 0.0025); 
 
 const totalThermalResistance = rConductive + rConvective;
 const steadyStateDieTemp = 20.0 + (fluidDeltaT * 0.5) + (targetPowerLoad * totalThermalResistance);
@@ -842,6 +853,8 @@ colors[i * 3 + 2] = c.b;
 particleSystem.geometry.attributes.position.needsUpdate = true;
 particleSystem.geometry.attributes.color.needsUpdate = true;
 }
+
+renderer.render(scene, camera);
 }
 
 // --- OPENSCAD EXPORT ROUTINE ---
@@ -875,7 +888,7 @@ link.download = "copper_anthill_block.scad";
 link.click();
 }
 
-// --- STL MESH GENERATOR ---
+// --- STL MESH GENERATOR (MODIFIED TO TARGET THE BOOLED HOLLOW MESH) ---
 function exportManifoldSTL(geometrySource, filenameString) {
 if (!geometrySource || !geometrySource.attributes.position) {
 return alert("Geometry parsing unresolved or target configuration compiling.");
@@ -883,6 +896,30 @@ return alert("Geometry parsing unresolved or target configuration compiling.");
 let positionAttr = geometrySource.attributes.position;
 let indexAttr = geometrySource.index;
 let stlString = `solid copper_manifold_mesh\n`;
+
+function writeFacetTriangle(pos, idxA, idxB, idxC) {
+let ax = pos.getX(idxA), ay = pos.getY(idxA), az = pos.getZ(idxA);
+let bx = pos.getX(idxB), by = pos.getY(idxB), bz = pos.getZ(idxB);
+let cx = pos.getX(idxC), cy = pos.getY(idxC), cz = pos.getZ(idxC);
+
+// Calculate standard normal vector
+let ux = bx - ax, uy = by - ay, uz = bz - az;
+let vx = cx - ax, vy = cy - ay, vz = cz - az;
+let nx = uy * vz - uz * vy;
+let ny = uz * vx - ux * vz;
+let nz = ux * vy - uy * vx;
+let len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+if(len > 0) { nx /= len; ny /= len; nz /= len; }
+
+return `facet normal ${nx.toExponential(4)} ${ny.toExponential(4)} ${nz.toExponential(4)}\n` +
+` outer loop\n` +
+` vertex ${ax.toFixed(4)} ${ay.toFixed(4)} ${az.toFixed(4)}\n` +
+` vertex ${bx.toFixed(4)} ${by.toFixed(4)} ${bz.toFixed(4)}\n` +
+` vertex ${cx.toFixed(4)} ${cy.toFixed(4)} ${cz.toFixed(4)}\n` +
+` endloop\n` +
+`endfacet\n`;
+}
+
 if (indexAttr) {
 for (let i = 0; i < indexAttr.count; i += 3) {
 stlString += writeFacetTriangle(positionAttr, indexAttr.getX(i), indexAttr.getX(i + 1), indexAttr.getX(i + 2));
@@ -894,71 +931,29 @@ stlString += writeFacetTriangle(positionAttr, i, i + 1, i + 2);
 }
 stlString += `endsolid copper_manifold_mesh\n`;
 const binaryBlob = new Blob([stlString], { type: 'text/plain' });
-const triggerAnchor = document.createElement('a');
-triggerAnchor.href = URL.createObjectURL(binaryBlob);
-triggerAnchor.download = filenameString;
-triggerAnchor.click();
+const link = document.createElement('a');
+link.href = URL.createObjectURL(binaryBlob);
+link.download = filenameString;
+link.click();
 }
 
-function writeFacetTriangle(positions, indexA, indexB, indexC) {
-const ax = positions.getX(indexA), ay = positions.getY(indexA), az = positions.getZ(indexA);
-const bx = positions.getX(indexB), by = positions.getY(indexB), bz = positions.getZ(indexB);
-const cx = positions.getX(indexC), cy = positions.getY(indexC), cz = positions.getZ(indexC);
-const ux = bx - ax, uy = by - ay, uz = bz - az;
-const vx = cx - ax, vy = cy - ay, vz = cz - az;
-const nx = uy * vz - uz * vy;
-const ny = uz * vx - ux * vz;
-const nz = ux * vy - uy * vx;
-const normalVectorMag = Math.sqrt(nx*nx + ny*ny + nz*nz);
-const nXNormalized = normalVectorMag > 0 ? nx / normalVectorMag : 0;
-const nYNormalized = normalVectorMag > 0 ? ny / normalVectorMag : 0;
-const nZNormalized = normalVectorMag > 0 ? nz / normalVectorMag : 0;
-return ` facet normal ${nXNormalized} ${nYNormalized} ${nZNormalized}\n` +
-   ` outer loop\n` +
-   ` vertex ${ax.toFixed(4)} ${ay.toFixed(4)} ${az.toFixed(4)}\n` +
-   ` vertex ${bx.toFixed(4)} ${by.toFixed(4)} ${bz.toFixed(4)}\n` +
-   ` vertex ${cx.toFixed(4)} ${cy.toFixed(4)} ${cz.toFixed(4)}\n` +
-   ` endloop\n` +
-   ` endfacet\n`;
-}
+// --- BIND EVENT LISTENERS TO UI ELEMENTS ---
+document.getElementById('btn-generate').addEventListener('click', executeProceduralPipeline);
 
-function runDeferredPipeline() {
-document.getElementById('loading').style.display = 'block';
-setTimeout(() => {
-executeProceduralPipeline();
-document.getElementById('loading').style.display = 'none';
-}, 80);
-}
-
-// --- EVENT MANAGEMENT HANDLERS ---
-document.getElementById('btn-generate').addEventListener('click', runDeferredPipeline);
-document.getElementById('param-render').addEventListener('change', runDeferredPipeline);
-document.getElementById('param-medium').addEventListener('change', runDeferredPipeline);
-document.getElementById('param-temp').addEventListener('input', () => {
-targetPowerLoad = parseFloat(document.getElementById('param-temp').value);
-document.getElementById('temp-val').innerText = targetPowerLoad + " W";
-});
-
-document.getElementById('btn-toggle-diagnostics').addEventListener('click', function() {
-diagnosticModeActive = !diagnosticModeActive;
-if (diagnosticModeActive) {
-this.innerText = "Show Hardware Material View";
-this.classList.add('active');
-} else {
-this.innerText = "Show Physics Heat Map";
-this.classList.remove('active');
-}
-const flowMedium = document.getElementById('param-medium').value;
-const renderMode = document.getElementById('param-render').value;
-updateBlockMaterials(flowMedium, renderMode);
-if(particleSystem) scene.remove(particleSystem);
-simulatedParticles = [];
-buildVectorParticleEngine(flowMedium, currentInterpolatedTemp);
+document.getElementById('btn-export-block').addEventListener('click', () => {
+// Passing the hollow block (Chassis MINUS Fluid Core) to the STL engine
+exportManifoldSTL(cachedHollowBlockGeo, "anthill_waterblock_manifold.stl");
 });
 
 document.getElementById('btn-export-scad').addEventListener('click', compileOpenSCADScript);
-document.getElementById('btn-export-block').addEventListener('click', () => {
-exportManifoldSTL(cachedHollowBlockGeo, "copper_anthill_waterblock.stl");
+
+document.getElementById('btn-toggle-diagnostics').addEventListener('click', function() {
+diagnosticModeActive = !diagnosticModeActive;
+this.classList.toggle('active');
+this.innerText = diagnosticModeActive ? "Show Real Material View" : "Show Physics Heat Map";
+const renderMode = document.getElementById('param-render').value;
+const flowMedium = document.getElementById('param-medium').value;
+updateBlockMaterials(flowMedium, renderMode);
 });
 
 window.addEventListener('resize', () => {
@@ -967,20 +962,9 @@ camera.updateProjectionMatrix();
 renderer.setSize(container.clientWidth, container.clientHeight);
 });
 
-function systemTicks() {
-requestAnimationFrame(systemTicks);
-controls.update();
+// Auto-run on startup
+executeProceduralPipeline();
 animateSimulationEngine();
-renderer.render(scene, camera);
-}
-
-const loadingScriptBridge = document.createElement('script');
-loadingScriptBridge.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js';
-loadingScriptBridge.onload = () => {
-runDeferredPipeline();
-systemTicks();
-};
-document.head.appendChild(loadingScriptBridge);
 </script>
 </body>
 </html>
