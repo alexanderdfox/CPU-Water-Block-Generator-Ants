@@ -1,4 +1,6 @@
-# Sim.py — Advanced CPU Cooler Geometry Simulator
+# Inspired by Ants 🐜
+
+## Sim.py — Advanced CPU Cooler Geometry Simulator
 
 **A specialized simulator for analyzing custom CPU cooler geometries using STL models.**
 
