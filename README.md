@@ -44,10 +44,10 @@
 ---
 
 
-### Example: `ants.stl`
+### Example: `antmills.stl`
 
 **Model:** `antmills.stl`  
-**Unit Fix:** STL max dimension (50.0) assumed in mm → converted to meters  
+**Unit Fix:** STL max dimension (60.0) assumed in mm → converted to meters  
 **Slicing Axis:** X (based on model length)
 
 ---
