@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thermodynamic Copper Anthill CPU Block Simulation</title>
+<style>
+:root {
+--bg-color: #06060a;
+--panel-bg: #0f0f15;
+--accent-color: #e07a5f;
+--accent-hover: #f4a261;
+--text-color: #f8fafc;
+--text-muted: #64748b;
+--border-color: #1e1e2f;
+}
+body {
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+background-color: var(--bg-color);
+color: var(--text-color);
+margin: 0;
+padding: 20px;
+display: flex;
+flex-direction: column;
+align-items: center;
+min-height: 100vh;
+}
+header {
+text-align: center;
+margin-bottom: 20px;
+max-width: 900px;
+}
+h1 {
+color: var(--accent-color);
+margin-bottom: 5px;
+font-size: 1.8rem;
+letter-spacing: -0.02em;
+}
+p {
+color: var(--text-muted);
+margin: 0;
+font-size: 0.95rem;
+line-height: 1.4;
+}
+.container {
+display: flex;
+flex-direction: row;
+gap: 20px;
+width: 100%;
+max-width: 1400px;
+height: 780px;
+}
+.panel {
+background-color: var(--panel-bg);
+border: 1px solid var(--border-color);
+border-radius: 10px;
+padding: 20px;
+display: flex;
+flex-direction: column;
+box-sizing: border-box;
+}
+.controls {
+flex: 1;
+max-width: 380px;
+overflow-y: auto;
+gap: 14px;
+}
+.viewer-panel {
+flex: 2;
+position: relative;
+justify-content: center;
+align-items: center;
+background: radial-gradient(circle at center, #12121c 0%, #030305 100%);
+}
+canvas {
+width: 100%;
+height: 100%;
+border-radius: 8px;
+outline: none;
+}
+.control-group {
+display: flex;
+flex-direction: column;
+gap: 4px;
+margin-bottom: 10px;
+}
+.thermal-group {
+background: rgba(224, 122, 95, 0.05);
+border: 1px dashed rgba(224, 122, 95, 0.2);
+padding: 10px;
+border-radius: 6px;
+margin-bottom: 12px;
+}
+label {
+font-size: 0.8rem;
+font-weight: 700;
+color: #94a3b8;
+text-transform: uppercase;
+letter-spacing: 0.06em;
+}
+select {
+background-color: var(--bg-color);
+border: 1px solid var(--border-color);
+color: var(--text-color);
+padding: 8px;
+border-radius: 4px;
+font-size: 0.9rem;
+outline: none;
+}
+input[type="range"] {
+width: 100%;
+accent-color: var(--accent-color);
+}
+.range-val {
+font-size: 0.85rem;
+color: var(--accent-color);
+float: right;
+font-family: monospace;
+font-weight: bold;
+}
+button {
+background-color: var(--accent-color);
+color: white;
+border: none;
+padding: 12px;
+border-radius: 6px;
+font-weight: bold;
+cursor: pointer;
+transition: all 0.15s ease;
+font-size: 0.95rem;
+}
+button:hover {
+background-color: var(--accent-hover);
+}
+.actions {
+display: flex;
+flex-direction: column;
+gap: 8px;
+margin-top: 10px;
+}
+.btn-secondary {
+background-color: transparent;
+border: 1px solid var(--border-color);
+color: var(--text-color);
+}
+.btn-secondary:hover {
+background-color: var(--border-color);
+}
+
+/* INTERACTIVE ANALYTICS HUD OVERLAY */
+.hud-overlay {
+position: absolute;
+top: 15px;
+left: 15px;
+background: rgba(15, 15, 21, 0.92);
+border: 1px solid rgba(224, 122, 95, 0.35);
+border-radius: 8px;
+padding: 14px 18px;
+pointer-events: none;
+font-family: monospace;
+font-size: 0.85rem;
+color: #e2e8f0;
+display: flex;
+flex-direction: column;
+gap: 7px;
+box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+backdrop-filter: blur(5px);
+z-index: 5;
+min-width: 280px;
+}
+.hud-section-title {
+font-size: 0.75rem;
+color: var(--accent-color);
+font-weight: bold;
+border-bottom: 1px solid rgba(224, 122, 95, 0.2);
+padding-bottom: 2px;
+margin-top: 4px;
+letter-spacing: 0.05em;
+text-transform: uppercase;
+}
+.hud-item {
+display: flex;
+justify-content: space-between;
+align-items: center;
+border-bottom: 1px solid rgba(255,255,255,0.03);
+padding-bottom: 3px;
+}
+.hud-label {
+color: #64748b;
+font-size: 0.78rem;
+}
+.hud-value {
+font-weight: bold;
+color: #38bdf8;
+}
+.hud-value.temp-hot { color: #ef4444; }
+.hud-value.temp-warn { color: #f59e0b; }
+
+#btn-toggle-diagnostics {
+background-color: #0284c7;
+margin-bottom: 5px;
+}
+#btn-toggle-diagnostics.active {
+background-color: #ef4444;
+box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+#loading {
+position: absolute;
+color: var(--accent-color);
+font-weight: bold;
+font-size: 1.1rem;
+background: rgba(10, 10, 15, 0.95);
+padding: 16px 32px;
+border-radius: 6px;
+border: 1px solid var(--border-color);
+display: none;
+box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+letter-spacing: 0.05em;
+text-align: center;
+z-index: 10;
+}
+@media (max-width: 850px) {
+.container {
+flex-direction: column;
+height: auto;
+}
+.controls {
+max-width: 100%;
+}
+.viewer-panel {
+height: 500px;
+}
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+<header>
+<h1>Copper Anthill Block: Convection & Thermal Field Sim</h1>
+<p>Procedural micro-channel blocks engineered with genuine copper physical rendering. Compute real-time heat patterns, Nusselt boundaries, and convective heat transfer mechanics.</p>
+</header>
+<div class="container">
+<div class="panel controls">
+<div class="control-group thermal-group">
+<label style="color: var(--accent-color);">CPU Core Load Temp <span id="temp-val" class="range-val">45°C</span></label>
+<input type="range" id="param-temp" min="20" max="100" value="45">
+</div>
+<div class="control-group thermal-group">
+<label style="color: #55aaff;">Cooling Medium Fluid</label>
+<select id="param-medium">
+<option value="water">Liquid Coolant Loop (H2O Distilled)</option>
+<option value="airflow">High-Velocity Forced Airflow</option>
+</select>
+</div>
+<button id="btn-toggle-diagnostics">Show Physics Heat Map</button>
+<div class="control-group">
+<label>Subterranean Seed <span id="seed-val" class="range-val">206</span></label>
+<input type="range" id="param-seed" min="1" max="5000" value="206">
+</div>
+<div class="control-group">
+<label>Nesting Levels (Trunks) <span id="trunks-val" class="range-val">5</span></label>
+<input type="range" id="param-trunks" min="3" max="8" value="5">
+</div>
+<div class="control-group">
+<label>Excavation Nodes <span id="nodes-val" class="range-val">8</span></label>
+<input type="range" id="param-nodes" min="6" max="12" value="8">
+</div>
+<div class="control-group">
+<label>Venturi Choke Dia <span id="dmin-val" class="range-val">1.8 mm</span></label>
+<input type="range" id="param-dmin" min="1.2" max="2.5" step="0.1" value="1.8">
+</div>
+<div class="control-group">
+<label>Nesting Chamber Dia <span id="dmax-val" class="range-val">7.0 mm</span></label>
+<input type="range" id="param-dmax" min="4.5" max="8.5" step="0.1" value="7.0">
+</div>
+<div class="control-group">
+<label>Cross-linking Density <span id="cross-val" class="range-val">75%</span></label>
+<input type="range" id="param-cross" min="0" max="100" value="75">
+</div>
+<div class="control-group">
+<label>Visual Block Profile</label>
+<select id="param-render">
+<option value="transparent-copper">Translucent Acrylic Casing + Copper Base</option>
+<option value="solid-copper">Raw Solid Copper Casing</option>
+<option value="fluid-core">Pure Medium Flow Channels</option>
+</select>
+</div>
+<div class="actions">
+<button id="btn-generate">Compute Topology</button>
+<button id="btn-export-block" class="btn-secondary">Export Waterblock STL</button>
+<button id="btn-export-scad" class="btn-secondary" style="border-color: #55aaff; color: #aadcff;">Export OpenSCAD Script</button>
+</div>
+</div>
+<div class="panel viewer-panel" id="viewer">
+<div class="hud-overlay">
+<div class="hud-section-title">System Metrics</div>
+<div class="hud-item">
+<span class="hud-label">CPU Die Temp:</span>
+<span id="hud-cpu-temp" class="hud-value">45.0°C</span>
+</div>
+<div class="hud-item">
+<span class="hud-label">Peak Flow Velocity:</span>
+<span id="hud-velocity" class="hud-value">1.25 m/s</span>
+</div>
+<div class="hud-item">
+<span class="hud-label">Outlet Fluid Temp:</span>
+<span id="hud-fluid-out" class="hud-value" style="color: #60a5fa;">28.4°C</span>
+</div>
+
+<div class="hud-section-title">Dimensionless Physics</div>
+<div class="hud-item">
+<span class="hud-label">Reynolds Num (Re):</span>
+<span id="hud-reynolds" class="hud-value" style="color:#a78bfa;">Laminar (1420)</span>
+</div>
+<div class="hud-item">
+<span class="hud-label">Nusselt Num (Nu):</span>
+<span id="hud-nusselt" class="hud-value" style="color:#f472b6;">48.2</span>
+</div>
+
+<div class="hud-section-title">Thermal Convection</div>
+<div class="hud-item">
+<span class="hud-label">Choke Convection (h):</span>
+<span id="hud-h-choke" class="hud-value" style="color:#34d399;">14,250 W/m²K</span>
+</div>
+<div class="hud-item">
+<span class="hud-label">Chamber Convection (h):</span>
+<span id="hud-h-chamber" class="hud-value" style="color:#059669;">5,120 W/m²K</span>
+</div>
+<div class="hud-item">
+<span class="hud-label">System Delta ΔT:</span>
+<span id="hud-delta" class="hud-value" style="color:#fbbf24;">8.4°C</span>
+</div>
+</div>
+<div id="loading">COMPUTING THERMAL GEOMETRIES...<br><span style="font-size:0.8rem; font-weight:normal; color:#94a3b8;">Processing High-Conductivity Copper Matrix</span></div>
+</div>
+</div>
+<script>
+// =========================================================================
+// VOXEL-RAY BOOLEAN COMPILER
+// =========================================================================
+const DynamicMeshBooleanCompiler = {
+difference: function(mainGeo, subtractGeo) {
+mainGeo.computeVertexNormals();
+subtractGeo.computeVertexNormals();
+const mainPos = mainGeo.attributes.position;
+const subPos = subtractGeo.attributes.position;
+const boundingBoxSub = new THREE.Box3().setFromBufferAttribute(subPos);
+const raycaster = new THREE.Raycaster();
+raycaster.firstHitOnly = false;
+const targetMesh = new THREE.Mesh(subtractGeo, new THREE.MeshBasicMaterial({side: THREE.DoubleSide}));
+const keepFacesIndices = [];
+const tempVA = new THREE.Vector3(), tempVB = new THREE.Vector3(), tempVC = new THREE.Vector3();
+const midpoint = new THREE.Vector3();
+const indexAttr = mainGeo.index;
+if (!indexAttr) return mainGeo;
+for (let i = 0; i < indexAttr.count; i += 3) {
+let idxA = indexAttr.getX(i);
+let idxB = indexAttr.getX(i + 1);
+let idxC = indexAttr.getX(i + 2);
+tempVA.fromBufferAttribute(mainPos, idxA);
+tempVB.fromBufferAttribute(mainPos, idxB);
+tempVC.fromBufferAttribute(mainPos, idxC);
+midpoint.set(0, 0, 0).add(tempVA).add(tempVB).add(tempVC).divideScalar(3);
+if (boundingBoxSub.containsPoint(midpoint)) {
+raycaster.set(midpoint, new THREE.Vector3(0, 0, 1));
+const intersections = raycaster.intersectObject(targetMesh);
+if (intersections.length % 2 === 1) {
+continue;
+}
+}
+keepFacesIndices.push(idxA, idxB, idxC);
+}
+const hollowResultGeo = new THREE.BufferGeometry();
+hollowResultGeo.setAttribute('position', mainPos);
+hollowResultGeo.setIndex(keepFacesIndices);
+hollowResultGeo.computeVertexNormals();
+return hollowResultGeo;
+}
+};
+
+function chaoticRandom(seed) {
+let state = Math.abs(seed | 0) + 1;
+return function() {
+state ^= state << 13;
+state ^= state >> 17;
+state ^= state << 5;
+let finalVal = ((state * 0x5DEECE66D) & 0xFFFFFFFF) / 4294967296;
+return finalVal < 0 ? finalVal + 1 : finalVal;
+}
+}
+
+// --- INITIALIZE GRAPHICS ENGINE ---
+const container = document.getElementById('viewer');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 1, 1000);
+camera.position.set(0, -90, 70);
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+container.appendChild(renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+const mainLight = new THREE.DirectionalLight(0xfff3e0, 0.9);
+mainLight.position.set(30, 60, 90);
+scene.add(mainLight);
+const secondaryLight = new THREE.DirectionalLight(0x90b0ff, 0.5);
+secondaryLight.position.set(-40, -50, 20);
+scene.add(secondaryLight);
+
+let activeVisualMesh, activeFluidSecondaryMesh, particleSystem;
+let cachedHollowBlockGeo, cachedFluidCoreGeo;
+let globalTunnelHistoryData = []; 
+let simulatedParticles = [];
+let targetCpuTemp = 45;
+let currentInterpolatedTemp = 45;
+let diagnosticModeActive = false;
+
+const blockWidth = 50, blockLength = 50, blockHeight = 24;
+const wallThickness = 4.2;
+const inletPos = [-14, 0, blockHeight / 2 - 3];
+const outletPos = [14, 0, blockHeight / 2 - 3];
+
+const copperMaterial = new THREE.MeshStandardMaterial({
+color: 0xd16e41,     
+roughness: 0.22,
+metalness: 0.95,
+clearcoat: 0.1,
+side: THREE.DoubleSide
+});
+
+const clearAcrylicMaterial = new THREE.MeshStandardMaterial({
+color: 0xdff0ff,
+roughness: 0.08,
+metalness: 0.1,
+transparent: true,
+opacity: 0.28,
+depthWrite: true,
+side: THREE.DoubleSide
+});
+
+const fluidChannelMaterial = new THREE.MeshStandardMaterial({
+color: 0x1a8cff,
+roughness: 0.3,
+metalness: 0.2,
+transparent: true,
+opacity: 0.55,
+side: THREE.DoubleSide
+});
+
+// --- MAIN SYSTEM GENERATOR PIPELINE ---
+function executeProceduralPipeline() {
+if(activeVisualMesh) scene.remove(activeVisualMesh);
+if(activeFluidSecondaryMesh) scene.remove(activeFluidSecondaryMesh);
+if(particleSystem) scene.remove(particleSystem);
+globalTunnelHistoryData = [];
+simulatedParticles = [];
+
+const seed = parseInt(document.getElementById('param-seed').value);
+const trunks = parseInt(document.getElementById('param-trunks').value);
+const nodesCount = parseInt(document.getElementById('param-nodes').value);
+const dMin = parseFloat(document.getElementById('param-dmin').value);
+const dMax = parseFloat(document.getElementById('param-dmax').value);
+const crossProb = parseInt(document.getElementById('param-cross').value) / 100;
+const renderMode = document.getElementById('param-render').value;
+targetCpuTemp = parseFloat(document.getElementById('param-temp').value);
+const flowMedium = document.getElementById('param-medium').value;
+
+document.getElementById('seed-val').innerText = seed;
+document.getElementById('trunks-val').innerText = trunks;
+document.getElementById('nodes-val').innerText = nodesCount;
+document.getElementById('dmin-val').innerText = dMin.toFixed(1) + " mm";
+document.getElementById('dmax-val').innerText = dMax.toFixed(1) + " mm";
+document.getElementById('cross-val').innerText = Math.round(crossProb * 100) + "%";
+document.getElementById('temp-val').innerText = targetCpuTemp + "°C";
+
+const rand = chaoticRandom(seed);
+const fluidSubstructures = [];
+
+const distributionPlenum = new THREE.SphereGeometry(6.8, 16, 16);
+distributionPlenum.translate(inletPos[0], inletPos[1], inletPos[2] - 4);
+fluidSubstructures.push(distributionPlenum);
+
+const collectionPlenum = new THREE.SphereGeometry(6.8, 16, 16);
+collectionPlenum.translate(outletPos[0], outletPos[1], outletPos[2] - 4);
+fluidSubstructures.push(collectionPlenum);
+
+const inletThruHole = new THREE.CylinderGeometry(4.0, 4.0, 22, 16);
+inletThruHole.rotateX(Math.PI / 2);
+inletThruHole.translate(inletPos[0], inletPos[1], inletPos[2] - 2);
+fluidSubstructures.push(inletThruHole);
+
+const outletThruHole = new THREE.CylinderGeometry(4.0, 4.0, 22, 16);
+outletThruHole.rotateX(Math.PI / 2);
+outletThruHole.translate(outletPos[0], outletPos[1], outletPos[2] - 2);
+fluidSubstructures.push(outletThruHole);
+
+let trackingNodeGrid = [];
+for (let i = 0; i < trunks; i++) {
+let branchChain = [];
+const normalStep = (i / (trunks - 1)) - 0.5;
+const targetYTrajectory = normalStep * (blockLength - 2 * wallThickness);
+let lastAnchor = new THREE.Vector3(inletPos[0], inletPos[1], inletPos[2] - 5);
+let lastDia = 6.8;
+
+for (let n = 1; n <= nodesCount; n++) {
+const stepScale = n / (nodesCount + 1);
+let x = inletPos[0] + stepScale * (outletPos[0] - inletPos[0]) + (rand() - 0.5) * 6.0;
+let y = targetYTrajectory * Math.cos(stepScale * 0.6) + (rand() - 0.5) * (16 / trunks);
+let maxFloorDepth = -blockHeight / 2 + wallThickness + 1.5;
+let maxCeilHeight = blockHeight / 2 - wallThickness - 2.5;
+let z = (maxFloorDepth + (Math.sin(stepScale * Math.PI * 1.2) * (blockHeight * 0.65))) + (rand() - 0.5) * 2.8;
+
+x = Math.max(-blockWidth / 2 + wallThickness + 3, Math.min(blockWidth / 2 - wallThickness - 3, x));
+y = Math.max(-blockLength / 2 + wallThickness + 2, Math.min(blockLength / 2 - wallThickness - 2, y));
+z = Math.max(maxFloorDepth + 1.2, Math.min(maxCeilHeight - 1.2, z));
+
+let diameter = dMin + (dMax - dMin) * rand();
+if (rand() > 0.82) diameter = dMax * 1.15;
+
+const targetNode = new THREE.Vector3(x, y, z);
+generateHighResTunnel(lastAnchor, targetNode, lastDia, diameter, fluidSubstructures);
+lastAnchor.copy(targetNode);
+lastDia = diameter;
+branchChain.push({ pos: lastAnchor.clone(), dia: lastDia });
+}
+
+generateHighResTunnel(lastAnchor, new THREE.Vector3(outletPos[0], outletPos[1], outletPos[2] - 5), lastDia, 6.8, fluidSubstructures);
+trackingNodeGrid.push(branchChain);
+}
+
+for (let i = 0; i < trunks; i++) {
+for (let n = 0; n < nodesCount; n++) {
+if (rand() < crossProb) {
+let altTrunk = Math.floor(rand() * trunks);
+let altNode = Math.floor(rand() * nodesCount);
+if (altTrunk !== i && trackingNodeGrid[altTrunk] && trackingNodeGrid[altTrunk][altNode]) {
+const nodeSrc = trackingNodeGrid[i][n];
+const nodeDst = trackingNodeGrid[altTrunk][altNode];
+if (nodeSrc && nodeDst) {
+const dist = nodeSrc.pos.distanceTo(nodeDst.pos);
+if (dist < 28 && dist > 4) {
+generateHighResTunnel(nodeSrc.pos, nodeDst.pos, nodeSrc.dia * 0.65, dMin * 1.1, fluidSubstructures);
+}
+}
+}
+}
+}
+}
+
+const primaryFluidCoreGeo = THREE.BufferGeometryUtils.mergeBufferGeometries(fluidSubstructures, true);
+cachedFluidCoreGeo = THREE.BufferGeometryUtils.toTrianglesDrawMode(primaryFluidCoreGeo, THREE.TrianglesDrawMode);
+
+const baseBox = new THREE.BoxGeometry(blockWidth, blockLength, blockHeight, 10, 10, 10);
+const inBoss = new THREE.CylinderGeometry(7.5, 7.5, 5, 16);
+inBoss.rotateX(Math.PI / 2);
+inBoss.translate(inletPos[0], inletPos[1], blockHeight / 2 + 2.5);
+const outBoss = new THREE.CylinderGeometry(7.5, 7.5, 5, 16);
+outBoss.rotateX(Math.PI / 2);
+outBoss.translate(outletPos[0], outletPos[1], blockHeight / 2 + 2.5);
+const rawChassisGeo = THREE.BufferGeometryUtils.mergeBufferGeometries([baseBox, inBoss, outBoss]);
+const primaryChassisGeo = THREE.BufferGeometryUtils.toTrianglesDrawMode(rawChassisGeo, THREE.TrianglesDrawMode);
+
+cachedHollowBlockGeo = DynamicMeshBooleanCompiler.difference(primaryChassisGeo, cachedFluidCoreGeo);
+
+updateBlockMaterials(flowMedium, renderMode);
+buildVectorParticleEngine(flowMedium, targetCpuTemp);
+}
+
+function updateBlockMaterials(flowMedium, renderMode) {
+if (diagnosticModeActive) {
+fluidChannelMaterial.color.setHex(0xff3300);
+fluidChannelMaterial.opacity = 0.15;
+clearAcrylicMaterial.color.setHex(0x221133);
+clearAcrylicMaterial.opacity = 0.4;
+copperMaterial.color.setHex(0xff5500);
+} else {
+if (flowMedium === 'water') {
+fluidChannelMaterial.color.setHex(0x1a75ff);
+fluidChannelMaterial.opacity = 0.45;
+} else {
+fluidChannelMaterial.color.setHex(0xa6d8ff);
+fluidChannelMaterial.opacity = 0.2;
+}
+clearAcrylicMaterial.color.setHex(0xdff0ff);
+clearAcrylicMaterial.opacity = 0.28;
+copperMaterial.color.setHex(0xd16e41);
+}
+
+if(activeVisualMesh) scene.remove(activeVisualMesh);
+if(activeFluidSecondaryMesh) scene.remove(activeFluidSecondaryMesh);
+
+if (renderMode === 'transparent-copper') {
+activeVisualMesh = new THREE.Mesh(cachedHollowBlockGeo, clearAcrylicMaterial);
+activeFluidSecondaryMesh = new THREE.Mesh(new THREE.BoxGeometry(blockWidth, blockLength, 4), copperMaterial);
+activeFluidSecondaryMesh.position.z = -blockHeight / 2 + 2;
+scene.add(activeVisualMesh);
+scene.add(activeFluidSecondaryMesh);
+} else if (renderMode === 'solid-copper') {
+activeVisualMesh = new THREE.Mesh(cachedHollowBlockGeo, copperMaterial);
+scene.add(activeVisualMesh);
+} else if (renderMode === 'fluid-core') {
+activeVisualMesh = new THREE.Mesh(cachedFluidCoreGeo, fluidChannelMaterial);
+scene.add(activeVisualMesh);
+}
+}
+
+function generateHighResTunnel(pA, pB, diaStart, diaEnd, destinationBuffer) {
+const spanDistance = pA.distanceTo(pB);
+if (spanDistance < 0.5) return;
+
+globalTunnelHistoryData.push({
+ptA: pA.clone(),
+ptB: pB.clone(),
+radA: diaStart / 2,
+radB: diaEnd / 2
+});
+
+const discreteSteps = Math.max(5, Math.floor(spanDistance / 1.5));
+let tracePoint = new THREE.Vector3();
+for (let s = 0; s <= discreteSteps; s++) {
+const interpolationFactor = s / discreteSteps;
+tracePoint.lerpVectors(pA, pB, interpolationFactor);
+const activeDiameter = diaStart + (diaEnd - diaStart) * interpolationFactor;
+const nodeVoxel = new THREE.SphereGeometry(activeDiameter / 2 + 0.08, 8, 8);
+nodeVoxel.translate(tracePoint.x, tracePoint.y, tracePoint.z);
+destinationBuffer.push(nodeVoxel);
+}
+}
+
+// --- DENSITY-DRIVEN PHYSICS SIMULATION ENGINE ---
+function buildVectorParticleEngine(medium, temp) {
+const maxParticleCapacity = medium === 'water' ? 950 : 1600;
+const particleGeometry = new THREE.BufferGeometry();
+const coords = new Float32Array(maxParticleCapacity * 3);
+const colors = new Float32Array(maxParticleCapacity * 3);
+
+for(let i = 0; i < maxParticleCapacity; i++) {
+let segmentIdx = Math.floor(Math.random() * globalTunnelHistoryData.length);
+let segment = globalTunnelHistoryData[segmentIdx];
+let progress = Math.random();
+
+let currentPos = new THREE.Vector3().lerpVectors(segment.ptA, segment.ptB, progress);
+coords[i*3] = currentPos.x;
+coords[i*3+1] = currentPos.y;
+coords[i*3+2] = currentPos.z;
+
+let averageRadius = (segment.radA + segment.radB) / 2;
+let localVelocityFactor = 1.2 / (averageRadius * averageRadius); 
+
+let localHeatFactor = (currentPos.x - inletPos[0]) / (outletPos[0] - inletPos[0]);
+localHeatFactor = Math.min(Math.max(localHeatFactor, 0), 1);
+let thermalIntensity = localHeatFactor * ((temp - 20) / 80);
+
+let c = calculateCoolantColor(medium, thermalIntensity, localVelocityFactor);
+colors[i*3] = c.r;
+colors[i*3+1] = c.g;
+colors[i*3+2] = c.b;
+
+simulatedParticles.push({
+pos: currentPos,
+segmentIndex: segmentIdx,
+progress: progress,
+baseSpeed: medium === 'water' ? 0.012 : 0.038,
+velocityModifier: localVelocityFactor
+});
+}
+
+particleGeometry.setAttribute('position', new THREE.BufferAttribute(coords, 3));
+particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+const particleMaterial = new THREE.PointsMaterial({
+size: diagnosticModeActive ? 1.7 : (medium === 'water' ? 1.3 : 0.85),
+vertexColors: true,
+transparent: true,
+opacity: medium === 'water' ? 0.85 : 0.6,
+blending: THREE.AdditiveBlending
+});
+
+particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particleSystem);
+}
+
+function calculateCoolantColor(medium, intensity, velocity) {
+let baseColor = new THREE.Color();
+
+if (diagnosticModeActive) {
+if(velocity > 1.8) {
+baseColor.setHex(0x00ffff); 
+} else if (velocity < 0.6) {
+baseColor.setHex(0x9900ff); 
+} else {
+baseColor.setHex(0xff00aa); 
+}
+return baseColor;
+}
+
+if (medium === 'water') {
+baseColor.setHex(0x00c3ff); 
+let terminalHotColor = new THREE.Color(0xff1100); 
+baseColor.lerp(terminalHotColor, intensity);
+} else {
+baseColor.setHex(0xd5f3f7); 
+let thermalAirHot = new THREE.Color(0xffaa11); 
+baseColor.lerp(thermalAirHot, intensity);
+}
+return baseColor;
+}
+
+function animateSimulationEngine() {
+currentInterpolatedTemp += (targetCpuTemp - currentInterpolatedTemp) * 0.04;
+
+if(!diagnosticModeActive) {
+const heatFactor = (currentInterpolatedTemp - 20) / 80;
+copperMaterial.color.setHex(0xd16e41).lerp(new THREE.Color(0xff3a11), heatFactor * 0.25);
+} else {
+const pulse = 0.85 + Math.sin(Date.now() * 0.005) * 0.15;
+const thermalColor = new THREE.Color(0xff2200).multiplyScalar(pulse);
+copperMaterial.color.copy(thermalColor);
+}
+
+const cpuTempHud = document.getElementById('hud-cpu-temp');
+cpuTempHud.innerText = currentInterpolatedTemp.toFixed(1) + "°C";
+if(currentInterpolatedTemp > 75) cpuTempHud.className = "hud-value temp-hot";
+else if(currentInterpolatedTemp > 50) cpuTempHud.className = "hud-value temp-warn";
+else cpuTempHud.className = "hud-value";
+
+const medium = document.getElementById('param-medium').value;
+const dMin = parseFloat(document.getElementById('param-dmin').value);
+const dMax = parseFloat(document.getElementById('param-dmax').value);
+const velocityBoost = 2.0 / (dMin * dMin); 
+
+const baseVelocity = medium === 'water' ? 1.15 : 4.45;
+const peakVelocity = baseVelocity * velocityBoost + (Math.sin(Date.now() * 0.003) * 0.04);
+document.getElementById('hud-velocity').innerText = peakVelocity.toFixed(2) + " m/s";
+
+// --- LIVE CONVECTION MATH PROCESSING ENGINE ---
+const k_fluid = medium === 'water' ? 0.609 : 0.0262; // W/m·K (Thermal Conductivity)
+const reynoldsBase = medium === 'water' ? 1350 : 3600;
+const reynoldsChoke = Math.floor(reynoldsBase * (2.2 / dMin));
+const reynoldsChamber = Math.floor(reynoldsBase * (1.0 / dMax));
+
+const reynoldsHud = document.getElementById('hud-reynolds');
+if (reynoldsChoke > 4000) {
+reynoldsHud.innerText = "Turbulent (" + reynoldsChoke + ")";
+reynoldsHud.style.color = "#ef4444";
+} else if (reynoldsChoke > 2300) {
+reynoldsHud.innerText = "Transitional (" + reynoldsChoke + ")";
+reynoldsHud.style.color = "#f59e0b";
+} else {
+reynoldsHud.innerText = "Laminar (" + reynoldsChoke + ")";
+reynoldsHud.style.color = "#10b981";
+}
+
+// Nusselt Number Equations Matrix (Dittus-Boelter proxy simulation mapping)
+const nusseltValue = medium === 'water' 
+? (0.023 * Math.pow(reynoldsChoke, 0.8) * Math.pow(4.3, 0.4)) 
+: (0.023 * Math.pow(reynoldsChoke, 0.8) * Math.pow(0.7, 0.4));
+document.getElementById('hud-nusselt').innerText = Math.max(4.36, nusseltValue).toFixed(1);
+
+// Compute Local Convective Coefficients (h = Nu * k / D)
+const hChoke = (Math.max(4.36, nusseltValue) * k_fluid) / (dMin / 1000);
+const hChamber = (Math.max(4.36, nusseltValue * 0.4) * k_fluid) / (dMax / 1000);
+
+document.getElementById('hud-h-choke').innerText = Math.floor(hChoke).toLocaleString() + " W/m²K";
+document.getElementById('hud-h-chamber').innerText = Math.floor(hChamber).toLocaleString() + " W/m²K";
+
+const energyTransferDelta = (currentInterpolatedTemp - 20) * (medium === 'water' ? 0.16 : 0.04) * (1.5 / dMin);
+document.getElementById('hud-fluid-out').innerText = (20 + energyTransferDelta).toFixed(1) + "°C";
+document.getElementById('hud-delta').innerText = energyTransferDelta.toFixed(1) + "°C";
+
+if (particleSystem && simulatedParticles.length > 0) {
+const positions = particleSystem.geometry.attributes.position.array;
+const colors = particleSystem.geometry.attributes.color.array;
+
+for (let i = 0; i < simulatedParticles.length; i++) {
+let particle = simulatedParticles[i];
+
+particle.progress += particle.baseSpeed * particle.velocityModifier * (0.8 + Math.random() * 0.4);
+
+if (particle.progress >= 1.0) {
+particle.progress = 0;
+particle.segmentIndex = Math.floor(Math.random() * globalTunnelHistoryData.length);
+}
+
+let segment = globalTunnelHistoryData[particle.segmentIndex];
+if (segment) {
+particle.pos.lerpVectors(segment.ptA, segment.ptB, particle.progress);
+positions[i * 3] = particle.pos.x;
+positions[i * 3 + 1] = particle.pos.y;
+positions[i * 3 + 2] = particle.pos.z;
+
+let localHeatFactor = (particle.pos.x - inletPos[0]) / (outletPos[0] - inletPos[0]);
+localHeatFactor = Math.min(Math.max(localHeatFactor, 0), 1);
+let thermalIntensity = localHeatFactor * ((currentInterpolatedTemp - 20) / 80);
+
+let c = calculateCoolantColor(medium, thermalIntensity, particle.velocityModifier);
+colors[i * 3] = c.r;
+colors[i * 3 + 1] = c.g;
+colors[i * 3 + 2] = c.b;
+}
+}
+particleSystem.geometry.attributes.position.needsUpdate = true;
+particleSystem.geometry.attributes.color.needsUpdate = true;
+}
+}
+
+// --- OPENSCAD EXPORT ROUTINE ---
+function compileOpenSCADScript() {
+let oscad = `// Monolithic Thermal-Optimized Copper Anthill Block Script\n`;
+oscad += `// Material Base Config: Raw Solid Copper Base Matrix\n\n`;
+oscad += `$fn = 16;\n\n`;
+oscad += `difference() {\n`;
+oscad += ` union() {\n`;
+oscad += ` translate([0, 0, 0]) cube([${blockWidth}, ${blockLength}, ${blockHeight}], center=true);\n`;
+oscad += ` translate([${inletPos[0]}, ${inletPos[1]}, ${blockHeight/2 + 2.5}]) cylinder(h=5, r=7.5, center=true);\n`;
+oscad += ` translate([${outletPos[0]}, ${outletPos[1]}, ${blockHeight/2 + 2.5}]) cylinder(h=5, r=7.5, center=true);\n`;
+oscad += ` }\n\n`;
+oscad += ` union() {\n`;
+oscad += ` translate([${inletPos[0]}, ${inletPos[1]}, ${inletPos[2]-4}]) sphere(r=6.8, $fn=24);\n`;
+oscad += ` translate([${outletPos[0]}, ${outletPos[1]}, ${outletPos[2]-4}]) sphere(r=6.8, $fn=24);\n`;
+oscad += ` translate([${inletPos[0]}, ${inletPos[1]}, ${inletPos[2]-2}]) cylinder(h=22, r=4.0, center=true, $fn=20);\n`;
+oscad += ` translate([${outletPos[0]}, ${outletPos[1]}, ${outletPos[2]-2}]) cylinder(h=22, r=4.0, center=true, $fn=20);\n\n`;
+globalTunnelHistoryData.forEach((tunnel, index) => {
+oscad += ` hull() {\n`;
+oscad += ` translate([${tunnel.ptA.x.toFixed(3)}, ${tunnel.ptA.y.toFixed(3)}, ${tunnel.ptA.z.toFixed(3)}]) sphere(r=${tunnel.radA.toFixed(3)});\n`;
+oscad += ` translate([${tunnel.ptB.x.toFixed(3)}, ${tunnel.ptB.y.toFixed(3)}, ${tunnel.ptB.z.toFixed(3)}]) sphere(r=${tunnel.radB.toFixed(3)});\n`;
+oscad += ` }\n`;
+});
+oscad += ` }\n`;
+oscad += `}\n`;
+const blob = new Blob([oscad], { type: 'text/plain' });
+const link = document.createElement('a');
+link.href = URL.createObjectURL(blob);
+link.download = "copper_anthill_block.scad";
+link.click();
+}
+
+// --- STL MESH GENERATOR ---
+function exportManifoldSTL(geometrySource, filenameString) {
+if (!geometrySource || !geometrySource.attributes.position) {
+return alert("Geometry parsing unresolved or target configuration compiling.");
+}
+let positionAttr = geometrySource.attributes.position;
+let indexAttr = geometrySource.index;
+let stlString = `solid copper_manifold_mesh\n`;
+if (indexAttr) {
+for (let i = 0; i < indexAttr.count; i += 3) {
+stlString += writeFacetTriangle(positionAttr, indexAttr.getX(i), indexAttr.getX(i + 1), indexAttr.getX(i + 2));
+}
+} else {
+for (let i = 0; i < positionAttr.count; i += 3) {
+stlString += writeFacetTriangle(positionAttr, i, i + 1, i + 2);
+}
+}
+stlString += `endsolid copper_manifold_mesh\n`;
+const binaryBlob = new Blob([stlString], { type: 'text/plain' });
+const triggerAnchor = document.createElement('a');
+triggerAnchor.href = URL.createObjectURL(binaryBlob);
+triggerAnchor.download = filenameString;
+triggerAnchor.click();
+}
+
+function writeFacetTriangle(positions, indexA, indexB, indexC) {
+const ax = positions.getX(indexA), ay = positions.getY(indexA), az = positions.getZ(indexA);
+const bx = positions.getX(indexB), by = positions.getY(indexB), bz = positions.getZ(indexB);
+const cx = positions.getX(indexC), cy = positions.getY(indexC), cz = positions.getZ(indexC);
+const ux = bx - ax, uy = by - ay, uz = bz - az;
+const vx = cx - ax, vy = cy - ay, vz = cz - az;
+const nx = uy * vz - uz * vy;
+const ny = uz * vx - ux * vz;
+const nz = ux * vy - uy * vx;
+const normalVectorMag = Math.sqrt(nx*nx + ny*ny + nz*nz);
+const nXNormalized = normalVectorMag > 0 ? nx / normalVectorMag : 0;
+const nYNormalized = normalVectorMag > 0 ? ny / normalVectorMag : 0;
+const nZNormalized = normalVectorMag > 0 ? nz / normalVectorMag : 0;
+return ` facet normal ${nXNormalized} ${nYNormalized} ${nZNormalized}\n` +
+   ` outer loop\n` +
+   ` vertex ${ax.toFixed(4)} ${ay.toFixed(4)} ${az.toFixed(4)}\n` +
+   ` vertex ${bx.toFixed(4)} ${by.toFixed(4)} ${bz.toFixed(4)}\n` +
+   ` vertex ${cx.toFixed(4)} ${cy.toFixed(4)} ${cz.toFixed(4)}\n` +
+   ` endloop\n` +
+   ` endfacet\n`;
+}
+
+function runDeferredPipeline() {
+document.getElementById('loading').style.display = 'block';
+setTimeout(() => {
+executeProceduralPipeline();
+document.getElementById('loading').style.display = 'none';
+}, 80);
+}
+
+// --- EVENT MANAGEMENT HANDLERS ---
+document.getElementById('btn-generate').addEventListener('click', runDeferredPipeline);
+document.getElementById('param-render').addEventListener('change', runDeferredPipeline);
+document.getElementById('param-medium').addEventListener('change', runDeferredPipeline);
+document.getElementById('param-temp').addEventListener('input', () => {
+targetCpuTemp = parseFloat(document.getElementById('param-temp').value);
+document.getElementById('temp-val').innerText = targetCpuTemp + "°C";
+});
+
+document.getElementById('btn-toggle-diagnostics').addEventListener('click', function() {
+diagnosticModeActive = !diagnosticModeActive;
+if (diagnosticModeActive) {
+this.innerText = "Show Hardware Material View";
+this.classList.add('active');
+} else {
+this.innerText = "Show Physics Heat Map";
+this.classList.remove('active');
+}
+const flowMedium = document.getElementById('param-medium').value;
+const renderMode = document.getElementById('param-render').value;
+updateBlockMaterials(flowMedium, renderMode);
+if(particleSystem) scene.remove(particleSystem);
+simulatedParticles = [];
+buildVectorParticleEngine(flowMedium, targetCpuTemp);
+});
+
+document.getElementById('btn-export-scad').addEventListener('click', compileOpenSCADScript);
+document.getElementById('btn-export-block').addEventListener('click', () => {
+exportManifoldSTL(cachedHollowBlockGeo, "copper_anthill_waterblock.stl");
+});
+
+window.addEventListener('resize', () => {
+camera.aspect = container.clientWidth / container.clientHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+function systemTicks() {
+requestAnimationFrame(systemTicks);
+controls.update();
+animateSimulationEngine();
+renderer.render(scene, camera);
+}
+
+// Runtime Dependency Resolver
+const loadingScriptBridge = document.createElement('script');
+loadingScriptBridge.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js';
+loadingScriptBridge.onload = () => {
+runDeferredPipeline();
+systemTicks();
+};
+document.head.appendChild(loadingScriptBridge);
+</script>
+</body>
+</html>
