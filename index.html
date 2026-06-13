@@ -152,7 +152,7 @@ background-color: var(--border-color);
 position: absolute;
 top: 15px;
 left: 15px;
-background: rgba(15, 15, 21, 0.92);
+background: rgba(15, 15, 21, 0.94);
 border: 1px solid rgba(224, 122, 95, 0.35);
 border-radius: 8px;
 padding: 14px 18px;
@@ -166,7 +166,7 @@ gap: 7px;
 box-shadow: 0 6px 16px rgba(0,0,0,0.6);
 backdrop-filter: blur(5px);
 z-index: 5;
-min-width: 280px;
+min-width: 290px;
 }
 .hud-section-title {
 font-size: 0.75rem;
@@ -238,14 +238,14 @@ height: 500px;
 </head>
 <body>
 <header>
-<h1>Copper Anthill Block: Convection & Thermal Field Sim</h1>
+<h1>Copper Anthill Block: Real Material Fluid Simulation</h1>
 <p>Procedural micro-channel blocks engineered with genuine copper physical rendering. Compute real-time heat patterns, Nusselt boundaries, and convective heat transfer mechanics.</p>
 </header>
 <div class="container">
 <div class="panel controls">
 <div class="control-group thermal-group">
-<label style="color: var(--accent-color);">CPU Core Load Temp <span id="temp-val" class="range-val">45°C</span></label>
-<input type="range" id="param-temp" min="20" max="100" value="45">
+<label style="color: var(--accent-color);">CPU Thermal Load <span id="temp-val" class="range-val">200 W</span></label>
+<input type="range" id="param-temp" min="50" max="350" step="10" value="200">
 </div>
 <div class="control-group thermal-group">
 <label style="color: #55aaff;">Cooling Medium Fluid</label>
@@ -297,11 +297,11 @@ height: 500px;
 <div class="hud-overlay">
 <div class="hud-section-title">System Metrics</div>
 <div class="hud-item">
-<span class="hud-label">CPU Die Temp:</span>
+<span class="hud-label">Simulated Die Temp:</span>
 <span id="hud-cpu-temp" class="hud-value">45.0°C</span>
 </div>
 <div class="hud-item">
-<span class="hud-label">Peak Flow Velocity:</span>
+<span class="hud-label">Peak Choke Velocity:</span>
 <span id="hud-velocity" class="hud-value">1.25 m/s</span>
 </div>
 <div class="hud-item">
@@ -311,11 +311,11 @@ height: 500px;
 
 <div class="hud-section-title">Dimensionless Physics</div>
 <div class="hud-item">
-<span class="hud-label">Reynolds Num (Re):</span>
+<span class="hud-label">Choke Reynolds (Re):</span>
 <span id="hud-reynolds" class="hud-value" style="color:#a78bfa;">Laminar (1420)</span>
 </div>
 <div class="hud-item">
-<span class="hud-label">Nusselt Num (Nu):</span>
+<span class="hud-label">Peak Nusselt (Nu):</span>
 <span id="hud-nusselt" class="hud-value" style="color:#f472b6;">48.2</span>
 </div>
 
@@ -329,8 +329,8 @@ height: 500px;
 <span id="hud-h-chamber" class="hud-value" style="color:#059669;">5,120 W/m²K</span>
 </div>
 <div class="hud-item">
-<span class="hud-label">System Delta ΔT:</span>
-<span id="hud-delta" class="hud-value" style="color:#fbbf24;">8.4°C</span>
+<span class="hud-label">Fluid Delta ΔT:</span>
+<span id="hud-delta" class="hud-value" style="color:#fbbf24;">2.4°C</span>
 </div>
 </div>
 <div id="loading">COMPUTING THERMAL GEOMETRIES...<br><span style="font-size:0.8rem; font-weight:normal; color:#94a3b8;">Processing High-Conductivity Copper Matrix</span></div>
@@ -417,8 +417,8 @@ let activeVisualMesh, activeFluidSecondaryMesh, particleSystem;
 let cachedHollowBlockGeo, cachedFluidCoreGeo;
 let globalTunnelHistoryData = []; 
 let simulatedParticles = [];
-let targetCpuTemp = 45;
-let currentInterpolatedTemp = 45;
+let targetPowerLoad = 200;
+let currentInterpolatedTemp = 35;
 let diagnosticModeActive = false;
 
 const blockWidth = 50, blockLength = 50, blockHeight = 24;
@@ -468,7 +468,7 @@ const dMin = parseFloat(document.getElementById('param-dmin').value);
 const dMax = parseFloat(document.getElementById('param-dmax').value);
 const crossProb = parseInt(document.getElementById('param-cross').value) / 100;
 const renderMode = document.getElementById('param-render').value;
-targetCpuTemp = parseFloat(document.getElementById('param-temp').value);
+targetPowerLoad = parseFloat(document.getElementById('param-temp').value);
 const flowMedium = document.getElementById('param-medium').value;
 
 document.getElementById('seed-val').innerText = seed;
@@ -477,7 +477,7 @@ document.getElementById('nodes-val').innerText = nodesCount;
 document.getElementById('dmin-val').innerText = dMin.toFixed(1) + " mm";
 document.getElementById('dmax-val').innerText = dMax.toFixed(1) + " mm";
 document.getElementById('cross-val').innerText = Math.round(crossProb * 100) + "%";
-document.getElementById('temp-val').innerText = targetCpuTemp + "°C";
+document.getElementById('temp-val').innerText = targetPowerLoad + " W";
 
 const rand = chaoticRandom(seed);
 const fluidSubstructures = [];
@@ -569,7 +569,7 @@ const primaryChassisGeo = THREE.BufferGeometryUtils.toTrianglesDrawMode(rawChass
 cachedHollowBlockGeo = DynamicMeshBooleanCompiler.difference(primaryChassisGeo, cachedFluidCoreGeo);
 
 updateBlockMaterials(flowMedium, renderMode);
-buildVectorParticleEngine(flowMedium, targetCpuTemp);
+buildVectorParticleEngine(flowMedium, currentInterpolatedTemp);
 }
 
 function updateBlockMaterials(flowMedium, renderMode) {
@@ -713,66 +713,100 @@ return baseColor;
 }
 
 function animateSimulationEngine() {
-currentInterpolatedTemp += (targetCpuTemp - currentInterpolatedTemp) * 0.04;
-
-if(!diagnosticModeActive) {
-const heatFactor = (currentInterpolatedTemp - 20) / 80;
-copperMaterial.color.setHex(0xd16e41).lerp(new THREE.Color(0xff3a11), heatFactor * 0.25);
-} else {
-const pulse = 0.85 + Math.sin(Date.now() * 0.005) * 0.15;
-const thermalColor = new THREE.Color(0xff2200).multiplyScalar(pulse);
-copperMaterial.color.copy(thermalColor);
-}
-
-const cpuTempHud = document.getElementById('hud-cpu-temp');
-cpuTempHud.innerText = currentInterpolatedTemp.toFixed(1) + "°C";
-if(currentInterpolatedTemp > 75) cpuTempHud.className = "hud-value temp-hot";
-else if(currentInterpolatedTemp > 50) cpuTempHud.className = "hud-value temp-warn";
-else cpuTempHud.className = "hud-value";
-
 const medium = document.getElementById('param-medium').value;
 const dMin = parseFloat(document.getElementById('param-dmin').value);
 const dMax = parseFloat(document.getElementById('param-dmax').value);
-const velocityBoost = 2.0 / (dMin * dMin); 
+const numChannels = parseInt(document.getElementById('param-trunks').value);
 
-const baseVelocity = medium === 'water' ? 1.15 : 4.45;
-const peakVelocity = baseVelocity * velocityBoost + (Math.sin(Date.now() * 0.003) * 0.04);
-document.getElementById('hud-velocity').innerText = peakVelocity.toFixed(2) + " m/s";
+// --- STRICT THERMODYNAMIC REAL-WORLD PROPERTIES CONSTANTS ---
+const k_fluid = medium === 'water' ? 0.609 : 0.0262;      // Thermal Conductivity (W/m·K)
+const cp_fluid = medium === 'water' ? 4184 : 1005;        // Specific Heat Capacity (J/kg·K)
+const rho_fluid = medium === 'water' ? 997 : 1.204;       // Fluid Density (kg/m³)
+const mu_fluid = medium === 'water' ? 0.00089 : 0.0000183; // Dynamic Viscosity (Pa·s)
+const prandtl = medium === 'water' ? 6.14 : 0.707;        // Fluid Prandtl Number
 
-// --- LIVE CONVECTION MATH PROCESSING ENGINE ---
-const k_fluid = medium === 'water' ? 0.609 : 0.0262; // W/m·K (Thermal Conductivity)
-const reynoldsBase = medium === 'water' ? 1350 : 3600;
-const reynoldsChoke = Math.floor(reynoldsBase * (2.2 / dMin));
-const reynoldsChamber = Math.floor(reynoldsBase * (1.0 / dMax));
+// Volumetric Loop System Specifications
+const totalVolumetricFlow = medium === 'water' 
+    ? (2.0 / 60000)   // 2.0 Liters/min converted to m³/s
+    : (35.0 * 0.000471947); // 35 CFM converted to m³/s
 
+const areaChoke = numChannels * Math.PI * Math.pow((dMin / 1000) / 2, 2);
+const areaChamber = numChannels * Math.PI * Math.pow((dMax / 1000) / 2, 2);
+
+const vChoke = totalVolumetricFlow / areaChoke;
+document.getElementById('hud-velocity').innerText = vChoke.toFixed(2) + " m/s";
+
+// Precise Reynolds Number Calculations (Re = rho * v * D / mu)
+const reynoldsChoke = (rho_fluid * vChoke * (dMin / 1000)) / mu_fluid;
 const reynoldsHud = document.getElementById('hud-reynolds');
+
 if (reynoldsChoke > 4000) {
-reynoldsHud.innerText = "Turbulent (" + reynoldsChoke + ")";
-reynoldsHud.style.color = "#ef4444";
+    reynoldsHud.innerText = "Turbulent (" + Math.floor(reynoldsChoke) + ")";
+    reynoldsHud.style.color = "#ef4444";
 } else if (reynoldsChoke > 2300) {
-reynoldsHud.innerText = "Transitional (" + reynoldsChoke + ")";
-reynoldsHud.style.color = "#f59e0b";
+    reynoldsHud.innerText = "Transitional (" + Math.floor(reynoldsChoke) + ")";
+    reynoldsHud.style.color = "#f59e0b";
 } else {
-reynoldsHud.innerText = "Laminar (" + reynoldsChoke + ")";
-reynoldsHud.style.color = "#10b981";
+    reynoldsHud.innerText = "Laminar (" + Math.floor(reynoldsChoke) + ")";
+    reynoldsHud.style.color = "#10b981";
 }
 
-// Nusselt Number Equations Matrix (Dittus-Boelter proxy simulation mapping)
-const nusseltValue = medium === 'water' 
-? (0.023 * Math.pow(reynoldsChoke, 0.8) * Math.pow(4.3, 0.4)) 
-: (0.023 * Math.pow(reynoldsChoke, 0.8) * Math.pow(0.7, 0.4));
-document.getElementById('hud-nusselt').innerText = Math.max(4.36, nusseltValue).toFixed(1);
+// Empirical Nusselt Correlation Equations
+let nuChoke;
+if (reynoldsChoke >= 3000) {
+    // Gnielinski / Dittus-Boelter Turbulent Proxy
+    const f = Math.pow(0.79 * Math.log(reynoldsChoke) - 1.64, -2); // Friction coefficient
+    nuChoke = ((f / 8) * (reynoldsChoke - 1000) * prandtl) / (1 + 12.7 * Math.sqrt(f / 8) * (Math.pow(prandtl, 2/3) - 1));
+} else {
+    nuChoke = 4.36; // Constant heat flux laminar baseline limit
+}
+document.getElementById('hud-nusselt').innerText = Math.max(4.36, nuChoke).toFixed(1);
 
-// Compute Local Convective Coefficients (h = Nu * k / D)
-const hChoke = (Math.max(4.36, nusseltValue) * k_fluid) / (dMin / 1000);
-const hChamber = (Math.max(4.36, nusseltValue * 0.4) * k_fluid) / (dMax / 1000);
+// Calculate True Convective Values (h = Nu * k / D)
+const hChoke = (nuChoke * k_fluid) / (dMin / 1000);
+
+let nuChamber = 4.36; 
+const vChamber = totalVolumetricFlow / areaChamber;
+const reynoldsChamber = (rho_fluid * vChamber * (dMax / 1000)) / mu_fluid;
+if (reynoldsChamber >= 3000) {
+    const fChamber = Math.pow(0.79 * Math.log(reynoldsChamber) - 1.64, -2);
+    nuChamber = ((fChamber / 8) * (reynoldsChamber - 1000) * prandtl) / (1 + 12.7 * Math.sqrt(fChamber / 8) * (Math.pow(prandtl, 2/3) - 1));
+}
+const hChamber = (nuChamber * k_fluid) / (dMax / 1000);
 
 document.getElementById('hud-h-choke').innerText = Math.floor(hChoke).toLocaleString() + " W/m²K";
 document.getElementById('hud-h-chamber').innerText = Math.floor(hChamber).toLocaleString() + " W/m²K";
 
-const energyTransferDelta = (currentInterpolatedTemp - 20) * (medium === 'water' ? 0.16 : 0.04) * (1.5 / dMin);
-document.getElementById('hud-fluid-out').innerText = (20 + energyTransferDelta).toFixed(1) + "°C";
-document.getElementById('hud-delta').innerText = energyTransferDelta.toFixed(1) + "°C";
+// Calculate True Steady State Equilibrium Temperatures
+const massFlowRate = totalVolumetricFlow * rho_fluid; 
+const fluidDeltaT = targetPowerLoad / (massFlowRate * cp_fluid);
+document.getElementById('hud-delta').innerText = fluidDeltaT.toFixed(1) + "°C";
+document.getElementById('hud-fluid-out').innerText = (20.0 + fluidDeltaT).toFixed(1) + "°C";
+
+// Total System Thermal Resistance Stack (\theta_total = \theta_copper + \theta_convective)
+const avgH = (hChoke * 0.4) + (hChamber * 0.6); // Surface area weighting distribution
+const totalSurfaceArea = (numChannels * 0.05 * Math.PI * ((dMin + dMax) / 2000)) * (1 + (parseInt(document.getElementById('param-cross').value)/100)*0.3);
+const rConvective = 1 / (avgH * totalSurfaceArea);
+const rConductive = 0.002 / (401 * 0.0025); // 2mm thick base plate over 25cm² area
+
+const totalThermalResistance = rConductive + rConvective;
+const steadyStateDieTemp = 20.0 + (fluidDeltaT * 0.5) + (targetPowerLoad * totalThermalResistance);
+
+currentInterpolatedTemp += (steadyStateDieTemp - currentInterpolatedTemp) * 0.04;
+
+const cpuTempHud = document.getElementById('hud-cpu-temp');
+cpuTempHud.innerText = currentInterpolatedTemp.toFixed(1) + "°C";
+if(currentInterpolatedTemp > 85) cpuTempHud.className = "hud-value temp-hot";
+else if(currentInterpolatedTemp > 65) cpuTempHud.className = "hud-value temp-warn";
+else cpuTempHud.className = "hud-value";
+
+if(!diagnosticModeActive) {
+    const heatFactor = Math.min(Math.max((currentInterpolatedTemp - 20) / 75, 0), 1);
+    copperMaterial.color.setHex(0xd16e41).lerp(new THREE.Color(0xff2200), heatFactor * 0.6);
+} else {
+    const pulse = 0.85 + Math.sin(Date.now() * 0.005) * 0.15;
+    copperMaterial.color.copy(new THREE.Color(0xff1100).multiplyScalar(pulse));
+}
 
 if (particleSystem && simulatedParticles.length > 0) {
 const positions = particleSystem.geometry.attributes.position.array;
@@ -901,8 +935,8 @@ document.getElementById('btn-generate').addEventListener('click', runDeferredPip
 document.getElementById('param-render').addEventListener('change', runDeferredPipeline);
 document.getElementById('param-medium').addEventListener('change', runDeferredPipeline);
 document.getElementById('param-temp').addEventListener('input', () => {
-targetCpuTemp = parseFloat(document.getElementById('param-temp').value);
-document.getElementById('temp-val').innerText = targetCpuTemp + "°C";
+targetPowerLoad = parseFloat(document.getElementById('param-temp').value);
+document.getElementById('temp-val').innerText = targetPowerLoad + " W";
 });
 
 document.getElementById('btn-toggle-diagnostics').addEventListener('click', function() {
@@ -919,7 +953,7 @@ const renderMode = document.getElementById('param-render').value;
 updateBlockMaterials(flowMedium, renderMode);
 if(particleSystem) scene.remove(particleSystem);
 simulatedParticles = [];
-buildVectorParticleEngine(flowMedium, targetCpuTemp);
+buildVectorParticleEngine(flowMedium, currentInterpolatedTemp);
 });
 
 document.getElementById('btn-export-scad').addEventListener('click', compileOpenSCADScript);
@@ -940,7 +974,6 @@ animateSimulationEngine();
 renderer.render(scene, camera);
 }
 
-// Runtime Dependency Resolver
 const loadingScriptBridge = document.createElement('script');
 loadingScriptBridge.src = 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/BufferGeometryUtils.js';
 loadingScriptBridge.onload = () => {
